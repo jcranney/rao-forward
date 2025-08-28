@@ -2,9 +2,17 @@ pub mod config;
 
 use core::f64;
 use std::rc::Rc;
+use thiserror::Error;
 
 pub use config::Config;
 use rao::{Line, Measurement, Sampleable, Sampler, Vec2D, Vec3D};
+use serde::{Deserialize, Serialize};
+
+#[derive(Error, Debug)]
+pub enum ResultsError {
+    #[error("could not serialize results output")]
+    Serialization(#[from] serde_json::Error),
+}
 
 const AS2RAD: f64 = f64::consts::PI / 180.0 / 3600.0;
 
@@ -37,6 +45,7 @@ enum Sensor {
     },
 }
 pub struct Output {
+    id: String,
     sensors: Vec<Rc<Sensor>>,
     disturbances: Vec<Rc<Disturbance>>,
     metric: Metric,
@@ -44,6 +53,7 @@ pub struct Output {
 
 enum Metric {
     WavefrontError,
+    MeasurementVector,
 }
 
 impl Disturbance {
@@ -216,7 +226,7 @@ impl Sensor {
 }
 
 impl Metric {
-    pub fn evaluate(&self, sensor: &Sensor, disturbances: Vec<Rc<Disturbance>>) {
+    pub fn evaluate(&self, sensor: &Sensor, disturbances: Vec<Rc<Disturbance>>) -> Vec<f64> {
         match self {
             Metric::WavefrontError => match sensor {
                 Sensor::SHWFS { measurements, id } => {
@@ -229,7 +239,7 @@ impl Metric {
                         rms += total_disturbance.powf(2.0);
                     }
                     rms /= measurements.len() as f64;
-                    println!("{}: {} arcsec rms", id, rms.sqrt());
+                    vec![rms.sqrt()] // arcsec
                 }
                 Sensor::Imager { id, measurements } => {
                     let mut rms: f64 = 0.0;
@@ -246,17 +256,79 @@ impl Metric {
                     mean /= measurements.len() as f64;
                     rms -= mean.powf(2.0);
                     rms = rms.sqrt();
-                    println!("{}: {} radians rms", id, rms);
+                    vec![rms] // radians
                 }
+            },
+            Metric::MeasurementVector => match sensor {
+                Sensor::SHWFS { id, measurements } => {
+                    measurements.iter().map(|meas| {
+                        disturbances.clone().into_iter().map(|dist| {
+                            meas.sample(dist.as_ref())
+                        }).sum()
+                    }).collect() // arcsec
+                },
+                Sensor::Imager { id, measurements } => {
+                    measurements.iter().map(|meas| {
+                        disturbances.clone().into_iter().map(|dist| {
+                            meas.sample(dist.as_ref())
+                        }).sum()
+                    }).collect() // radians
+                },
             },
         }
     }
 }
 
 impl Output {
-    pub fn evaluate(&self) {
+    pub fn evaluate(&self) -> SimulationResult {
+        let mut result = SimulationResult::new_from_output(self);
         for sensor in &self.sensors {
-            self.metric.evaluate(sensor, self.disturbances.clone());
+            result
+                .values
+                .append(&mut self.metric.evaluate(sensor, self.disturbances.clone()));
+        }
+        result
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SimulationResult {
+    pub id: String,
+    pub values: Vec<f64>,
+}
+
+impl SimulationResult {
+    fn new_from_output(output: &Output) -> Self {
+        Self {
+            id: output.id.clone(),
+            values: vec![],
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SimulationResults {
+    pub results: Vec<SimulationResult>,
+}
+
+impl SimulationResults {
+    pub fn new() -> Self {
+        Self { results: vec![] }
+    }
+
+    pub fn to_string(&self) -> Result<String, ResultsError> {
+        Ok(serde_json::to_string_pretty(self)?)
+    }
+}
+
+impl System {
+    pub fn evaluate(&self) -> SimulationResults {
+        SimulationResults {
+            results: self
+                .outputs
+                .iter()
+                .map(|output| output.evaluate())
+                .collect(),
         }
     }
 }

@@ -17,11 +17,9 @@ use crate::System;
 
 #[derive(Error, Debug)]
 pub enum ConfigError {
-    #[error("toml serialization failed")]
-    Serialization(#[from] toml::ser::Error),
-    #[error("toml deserialization failed")]
-    Deserialize(#[from] toml::de::Error),
-    #[error("io error: {0}")]
+    #[error("config json de/serialization failed")]
+    Serialization(#[from] serde_json::Error),
+    #[error("config file io error: {0}")]
     OpenConfig(#[from] std::io::Error),
 }
 
@@ -80,6 +78,8 @@ enum Sensor {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct Output {
+    /// id of this output (e.g., "science path")
+    pub id: String,
     /// disturbance ids
     pub disturbances: Vec<String>,
     /// sensor ids
@@ -91,17 +91,26 @@ struct Output {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 enum Metric {
     WafefrontError,
+    MeasurementVector,
 }
 
-impl<'a> Config {
+impl Config {
     pub fn new() -> Self {
         Self {
-            disturbances: vec![Disturbance::Zernike {
-                id: "dm".to_string(),
-                coeffs: vec![1.0, 2.0, 3.0],
-                radius: 4.0,
-                altitude: 0.0,
-            }],
+            disturbances: vec![
+                Disturbance::Zernike {
+                    id: "dsm".to_string(),
+                    coeffs: vec![1.0, 2.0, 3.0],
+                    radius: 4.0,
+                    altitude: 0.0,
+                },
+                Disturbance::Zernike {
+                    id: "dmhi".to_string(),
+                    coeffs: vec![1.0, 2.0, 3.0],
+                    radius: 4.0,
+                    altitude: 0.0,
+                },
+            ],
             sensors: vec![Sensor::SHWFS {
                 id: "lgs1".to_string(),
                 nsubx: 4,
@@ -115,17 +124,18 @@ impl<'a> Config {
                 disturbances: vec!["dm".to_string()],
                 sensors: vec!["lgs1".to_string()],
                 metric: Metric::WafefrontError,
+                id: "lgs path".to_string(),
             }],
         }
     }
 
     pub fn to_string(&self) -> Result<String, ConfigError> {
-        let result = toml::to_string(self)?;
+        let result = serde_json::to_string_pretty(self)?;
         Ok(result)
     }
 
     pub fn from_str(input: &str) -> Result<Self, ConfigError> {
-        let config = toml::from_str(input)?;
+        let config = serde_json::from_str(input)?;
         Ok(config)
     }
 
@@ -180,7 +190,9 @@ impl<'a> Config {
                     rotation,
                     direction,
                     gsalt,
-                } => Rc::new(crate::Sensor::new_imager(&id, nsamples, pitch, centre, rotation, direction, gsalt)),
+                } => Rc::new(crate::Sensor::new_imager(
+                    &id, nsamples, pitch, centre, rotation, direction, gsalt,
+                )),
             })
             .collect();
         let sys_outputs: Vec<crate::Output> = self
@@ -191,6 +203,7 @@ impl<'a> Config {
                      disturbances,
                      sensors,
                      metric,
+                     id,
                  }| crate::Output {
                     sensors: sys_sensors
                         .iter()
@@ -217,7 +230,9 @@ impl<'a> Config {
                         .collect(),
                     metric: match metric {
                         Metric::WafefrontError => crate::Metric::WavefrontError,
+                        Metric::MeasurementVector => crate::Metric::MeasurementVector,
                     },
+                    id,
                 },
             )
             .collect();

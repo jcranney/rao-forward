@@ -1,0 +1,272 @@
+{
+    "disturbances": [
+        {
+            "Zernike": {
+                "id": "dsm",
+                "coeffs": [
+                    0.0
+                ],
+                "radius": 4.0,
+                "altitude": 0.0
+            }
+        },
+        {
+            "Zernike": {
+                "id": "dmhi",
+                "coeffs": [
+                    0,
+                    1,
+                    0,
+                    0.0,
+                    0.1,
+                    0.2,
+                    0.3
+                ],
+                "radius": 6.0,
+                "altitude": 135000.0
+            }
+        },
+        {
+            "Zernike": {
+                "id": "dmlo",
+                "coeffs": [
+                    0.0
+                ],
+                "radius": 9.0,
+                "altitude": 6000.0
+            }
+        },
+        {
+            "Zernike": {
+                "id": "adc",
+                "coeffs": [
+                    0.0,
+                    0.1,
+                    0.2,
+                    0.3,
+                    0.4
+                ],
+                "radius": 3.0,
+                "altitude": 100.0
+            }
+        }
+    ],
+    "sensors": [
+        {
+            "SHWFS": {
+                "id": "lgssmall",
+                "nsubx": 4,
+                "subwidth": 0.2,
+                "centre": [
+                    0.0,
+                    0.0
+                ],
+                "rotation": 0.0,
+                "direction": [
+                    17.500,
+                    0.000
+                ],
+                "gsalt": 90000.0
+            }
+        },
+        {
+            "SHWFS": {
+                "id": "lgs1",
+                "nsubx": 40,
+                "subwidth": 0.2,
+                "centre": [
+                    0.0,
+                    0.0
+                ],
+                "rotation": 0.0,
+                "direction": [
+                    17.500,
+                    0.000
+                ],
+                "gsalt": 90000.0
+            }
+        },
+        {
+            "SHWFS": {
+                "id": "lgs2",
+                "nsubx": 40,
+                "subwidth": 0.2,
+                "centre": [
+                    0.0,
+                    0.0
+                ],
+                "rotation": 0.0,
+                "direction": [
+                    12.374,
+                    12.374
+                ],
+                "gsalt": 90000.0
+            }
+        },
+        {
+            "SHWFS": {
+                "id": "lgs3",
+                "nsubx": 40,
+                "subwidth": 0.2,
+                "centre": [
+                    0.0,
+                    0.0
+                ],
+                "rotation": 0.0,
+                "direction": [
+                    0.000,
+                    17.500
+                ],
+                "gsalt": 90000.0
+            }
+        },
+        {
+            "SHWFS": {
+                "id": "lgs4",
+                "nsubx": 40,
+                "subwidth": 0.2,
+                "centre": [
+                    0.0,
+                    0.0
+                ],
+                "rotation": 0.0,
+                "direction": [
+                    -12.374,
+                    12.374
+                ],
+                "gsalt": 90000.0
+            }
+        },
+        {
+            "SHWFS": {
+                "id": "lgs5",
+                "nsubx": 40,
+                "subwidth": 0.2,
+                "centre": [
+                    0.0,
+                    0.0
+                ],
+                "rotation": 0.0,
+                "direction": [
+                    -17.500,
+                    0.000
+                ],
+                "gsalt": 90000.0
+            }
+        },
+        {
+            "SHWFS": {
+                "id": "lgs6",
+                "nsubx": 40,
+                "subwidth": 0.2,
+                "centre": [
+                    0.0,
+                    0.0
+                ],
+                "rotation": 0.0,
+                "direction": [
+                    -12.374,
+                    -12.374
+                ],
+                "gsalt": 90000.0
+            }
+        },
+        {
+            "SHWFS": {
+                "id": "lgs7",
+                "nsubx": 40,
+                "subwidth": 0.2,
+                "centre": [
+                    0.0,
+                    0.0
+                ],
+                "rotation": 0.0,
+                "direction": [
+                    -0.000,
+                    -17.500
+                ],
+                "gsalt": 90000.0
+            }
+        },
+        {
+            "SHWFS": {
+                "id": "lgs8",
+                "nsubx": 40,
+                "subwidth": 0.2,
+                "centre": [
+                    0.0,
+                    0.0
+                ],
+                "rotation": 0.0,
+                "direction": [
+                    12.374,
+                    -12.374
+                ],
+                "gsalt": 90000.0
+            }
+        },
+        {
+            "Imager": {
+                "id": "science",
+                "nsamples": 41,
+                "pitch": 0.2,
+                "centre": [
+                    0.0,
+                    0.0
+                ],
+                "rotation": 0.0,
+                "direction": [
+                    0.0,
+                    0.0
+                ],
+                "gsalt": 90e3
+            }
+        }
+    ],
+    "outputs": [
+        {
+            "id": "science path",
+            "disturbances": [
+                "dsm",
+                "dmhi",
+                "dmlo",
+                "adc"
+            ],
+            "sensors": [
+                "science"
+            ],
+            "metric": "WafefrontError"
+        },
+        {
+            "id": "lgs wfs path",
+            "disturbances": [
+                "dsm",
+                "dmhi",
+                "dmlo"
+            ],
+            "sensors": [
+                "lgs1",
+                "lgs2",
+                "lgs3",
+                "lgs4",
+                "lgs5",
+                "lgs6",
+                "lgs7",
+                "lgs8"
+            ],
+            "metric": "WafefrontError"
+        },
+        {
+            "id": "lgs wfs slopes",
+            "disturbances": [
+                "dsm",
+                "dmhi",
+                "dmlo"
+            ],
+            "sensors": [
+                "lgssmall"
+            ],
+            "metric": "MeasurementVector"
+        }
+    ]
+}

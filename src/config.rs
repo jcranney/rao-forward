@@ -10,7 +10,7 @@
 //! (e.g.) `Disturbance` within this config module.
 
 use serde::{Deserialize, Serialize};
-use std::{fs, rc::Rc};
+use std::{fs, str::FromStr, sync::Arc};
 use thiserror::Error;
 
 use crate::System;
@@ -52,7 +52,7 @@ enum Disturbance {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 enum Sensor {
-    SHWFS {
+    Shwfs {
         /// id must be unique per config file
         id: String,
         /// nsubs across aperture
@@ -94,49 +94,19 @@ enum Metric {
     MeasurementVector,
 }
 
-impl Config {
-    pub fn new() -> Self {
-        Self {
-            disturbances: vec![
-                Disturbance::Zernike {
-                    id: "dsm".to_string(),
-                    coeffs: vec![1.0, 2.0, 3.0],
-                    radius: 4.0,
-                    altitude: 0.0,
-                },
-                Disturbance::Zernike {
-                    id: "dmhi".to_string(),
-                    coeffs: vec![1.0, 2.0, 3.0],
-                    radius: 4.0,
-                    altitude: 0.0,
-                },
-            ],
-            sensors: vec![Sensor::SHWFS {
-                id: "lgs1".to_string(),
-                nsubx: 4,
-                subwidth: 0.2,
-                centre: (0.0, 0.0),
-                rotation: 0.0,
-                direction: (17.5, 0.0),
-                gsalt: 90.0e3,
-            }],
-            outputs: vec![Output {
-                disturbances: vec!["dm".to_string()],
-                sensors: vec!["lgs1".to_string()],
-                metric: Metric::WafefrontError,
-                id: "lgs path".to_string(),
-            }],
-        }
+impl FromStr for Config {
+    type Err = ConfigError;
+    
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let config = serde_json::from_str(s)?;
+        Ok(config)
     }
+}
 
+impl Config {
     pub fn to_string(&self) -> Result<String, ConfigError> {
         let result = serde_json::to_string_pretty(self)?;
         Ok(result)
-    }
-
-    pub fn from_str(input: &str) -> Result<Self, ConfigError> {
-        let config = serde_json::from_str(input)?;
-        Ok(config)
     }
 
     pub fn from_file(filename: &str) -> Result<Self, ConfigError> {
@@ -151,7 +121,7 @@ impl Config {
     }
 
     pub fn to_system(self) -> System {
-        let sys_disturbances: Vec<Rc<crate::Disturbance>> = self
+        let sys_disturbances: Vec<Arc<crate::Disturbance>> = self
             .disturbances
             .into_iter()
             .map(
@@ -161,17 +131,17 @@ impl Config {
                      radius,
                      altitude,
                  }| {
-                    Rc::new(crate::Disturbance::new_zernike(
+                    Arc::new(crate::Disturbance::new_zernike(
                         id, coeffs, radius, altitude,
                     ))
                 },
             )
             .collect();
-        let sys_sensors: Vec<Rc<crate::Sensor>> = self
+        let sys_sensors: Vec<Arc<crate::Sensor>> = self
             .sensors
             .into_iter()
             .map(|sensor| match sensor {
-                Sensor::SHWFS {
+                Sensor::Shwfs {
                     id,
                     nsubx,
                     subwidth,
@@ -179,7 +149,7 @@ impl Config {
                     rotation,
                     direction,
                     gsalt,
-                } => Rc::new(crate::Sensor::new_shwfs(
+                } => Arc::new(crate::Sensor::new_shwfs(
                     &id, nsubx, subwidth, centre, rotation, direction, gsalt,
                 )),
                 Sensor::Imager {
@@ -190,7 +160,7 @@ impl Config {
                     rotation,
                     direction,
                     gsalt,
-                } => Rc::new(crate::Sensor::new_imager(
+                } => Arc::new(crate::Sensor::new_imager(
                     &id, nsamples, pitch, centre, rotation, direction, gsalt,
                 )),
             })
@@ -209,7 +179,7 @@ impl Config {
                         .iter()
                         .filter_map(|p| {
                             match sensors.contains(match &**p {
-                                crate::Sensor::SHWFS { id, .. } => id,
+                                crate::Sensor::Shwfs { id, .. } => id,
                                 crate::Sensor::Imager { id, .. } => id,
                             }) {
                                 true => Some(p.clone()),

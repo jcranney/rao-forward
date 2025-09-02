@@ -1,7 +1,8 @@
 pub mod config;
 
 use core::f64;
-use std::rc::Rc;
+use std::sync::Arc;
+use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use thiserror::Error;
 
 pub use config::Config;
@@ -35,7 +36,7 @@ enum Disturbance {
     },
 }
 enum Sensor {
-    SHWFS {
+    Shwfs {
         id: String,
         measurements: Vec<Measurement>,
     },
@@ -46,8 +47,8 @@ enum Sensor {
 }
 pub struct Output {
     id: String,
-    sensors: Vec<Rc<Sensor>>,
-    disturbances: Vec<Rc<Disturbance>>,
+    sensors: Vec<Arc<Sensor>>,
+    disturbances: Vec<Arc<Disturbance>>,
     metric: Metric,
 }
 
@@ -92,10 +93,8 @@ impl Sampleable for Disturbance {
                 let pos = p.position_at_altitude(*altitude);
                 let r = pos.norm() / radius;
                 let theta = pos.y.atan2(pos.x);
-                coeffs
-                    .iter()
-                    .zip(jnm)
-                    .map(|(coeff, (j, n, m))| coeff * zernike::zernike(*j, *n, *m, r, theta))
+                (0..coeffs.len()).into_iter()
+                    .map(|i| coeffs[i] * zernike::zernike(jnm[i].0, jnm[i].1, jnm[i].2, r, theta))
                     .sum()
             }
         }
@@ -130,13 +129,24 @@ impl Sensor {
             nsubx as u32,
         );
         let centre = Vec2D::new(centre.0, centre.1);
-        let centres = y
+        let mut centres = y
             .into_iter()
             .flat_map(move |y| {
                 let c = centre.clone();
                 x.clone().into_iter().map(move |x| x + &y + &c)
             })
             .collect::<Vec<Vec2D>>();
+        // rotate the centres
+        let rotation_rad = rotation * f64::consts::PI / 180.0;
+        centres = centres
+            .into_iter()
+            .map(|c| {
+                Vec2D::new(
+                    c.x * rotation_rad.cos() - c.y * rotation_rad.sin(),
+                    c.x * rotation_rad.sin() + c.y * rotation_rad.cos(),
+                )
+            })
+            .collect();
         let axis = Line::new(0.0, direction.0 * AS2RAD, 0.0, direction.1 * AS2RAD);
         let gspos3d = Vec3D::new(
             axis.position_at_altitude(gsalt).x,
@@ -149,7 +159,7 @@ impl Sensor {
                 central_line: Line::new_from_two_points(&Vec3D::new(c.x, c.y, 0.0), &gspos3d),
                 edge_length: subwidth,
                 edge_separation: subwidth,
-                gradient_axis: Vec2D::x_unit(),
+                gradient_axis: Vec2D::new(rotation_rad.cos(), rotation_rad.sin()),
                 npoints: 2,
                 altitude: f64::INFINITY,
             })
@@ -160,13 +170,16 @@ impl Sensor {
                 central_line: Line::new_from_two_points(&Vec3D::new(c.x, c.y, 0.0), &gspos3d),
                 edge_length: subwidth,
                 edge_separation: subwidth,
-                gradient_axis: Vec2D::y_unit(),
+                gradient_axis: Vec2D::new(
+                    (rotation_rad + f64::consts::FRAC_PI_2).cos(),
+                    (rotation_rad + f64::consts::FRAC_PI_2).sin(),
+                ),
                 npoints: 2,
                 altitude: f64::INFINITY,
             })
             .collect();
         let slopes: Vec<Measurement> = [x_slopes, y_slopes].concat();
-        Self::SHWFS {
+        Self::Shwfs {
             id: id.to_string(),
             measurements: slopes,
         }
@@ -199,13 +212,23 @@ impl Sensor {
             nsample as u32,
         );
         let centre = Vec2D::new(centre.0, centre.1);
-        let centres = y
+        let mut centres = y
             .into_iter()
             .flat_map(move |y| {
                 let c = centre.clone();
                 x.clone().into_iter().map(move |x| x + &y + &c)
             })
             .collect::<Vec<Vec2D>>();
+        let rotation_rad = rotation * f64::consts::PI / 180.0;
+        centres = centres
+            .into_iter()
+            .map(|c| {
+                Vec2D::new(
+                    c.x * rotation_rad.cos() - c.y * rotation_rad.sin(),
+                    c.x * rotation_rad.sin() + c.y * rotation_rad.cos(),
+                )
+            })
+            .collect();
         let axis = Line::new(0.0, direction.0 * AS2RAD, 0.0, direction.1 * AS2RAD);
         let gspos3d = Vec3D::new(
             axis.position_at_altitude(gsalt).x,
@@ -226,10 +249,10 @@ impl Sensor {
 }
 
 impl Metric {
-    pub fn evaluate(&self, sensor: &Sensor, disturbances: Vec<Rc<Disturbance>>) -> Vec<f64> {
+    pub fn evaluate(&self, sensor: &Sensor, disturbances: Vec<Arc<Disturbance>>) -> Vec<f64> {
         match self {
             Metric::WavefrontError => match sensor {
-                Sensor::SHWFS { measurements, id } => {
+                Sensor::Shwfs { measurements, .. } => {
                     let mut rms: f64 = 0.0;
                     for measurement in measurements {
                         let mut total_disturbance: f64 = 0.0;
@@ -241,7 +264,7 @@ impl Metric {
                     rms /= measurements.len() as f64;
                     vec![rms.sqrt()] // arcsec
                 }
-                Sensor::Imager { id, measurements } => {
+                Sensor::Imager { measurements, .. } => {
                     let mut rms: f64 = 0.0;
                     let mut mean: f64 = 0.0;
                     for measurement in measurements {
@@ -260,20 +283,30 @@ impl Metric {
                 }
             },
             Metric::MeasurementVector => match sensor {
-                Sensor::SHWFS { id, measurements } => {
-                    measurements.iter().map(|meas| {
-                        disturbances.clone().into_iter().map(|dist| {
-                            meas.sample(dist.as_ref())
-                        }).sum()
-                    }).collect() // arcsec
-                },
-                Sensor::Imager { id, measurements } => {
-                    measurements.iter().map(|meas| {
-                        disturbances.clone().into_iter().map(|dist| {
-                            meas.sample(dist.as_ref())
-                        }).sum()
-                    }).collect() // radians
-                },
+                Sensor::Shwfs { measurements, .. } => {
+                    measurements
+                        .par_iter()
+                        .map(|meas| {
+                            disturbances
+                                .clone()
+                                .into_par_iter()
+                                .map(|dist| meas.sample(dist.as_ref()))
+                                .sum()
+                        })
+                        .collect() // arcsec
+                }
+                Sensor::Imager { measurements, .. } => {
+                    measurements
+                        .par_iter()
+                        .map(|meas| {
+                            disturbances
+                                .clone()
+                                .into_iter()
+                                .map(|dist| meas.sample(dist.as_ref()))
+                                .sum()
+                        })
+                        .collect() // radians
+                }
             },
         }
     }
@@ -282,11 +315,12 @@ impl Metric {
 impl Output {
     pub fn evaluate(&self) -> SimulationResult {
         let mut result = SimulationResult::new_from_output(self);
-        for sensor in &self.sensors {
-            result
-                .values
-                .append(&mut self.metric.evaluate(sensor, self.disturbances.clone()));
-        }
+        let values: Vec<f64> = self.sensors
+            .par_iter()
+            .flat_map(|sensor| 
+                self.metric.evaluate(sensor, self.disturbances.clone())
+            ).collect();
+        result.values = values;
         result
     }
 }
@@ -309,6 +343,12 @@ impl SimulationResult {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SimulationResults {
     pub results: Vec<SimulationResult>,
+}
+
+impl Default for SimulationResults {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SimulationResults {

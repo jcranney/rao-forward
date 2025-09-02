@@ -20,9 +20,8 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    let system_config: Config;
     let Args { output, input } = Args::parse();
-    match input {
+    let system_config: Config = match input {
         None => {
             // check if stdin is terminal (problem)
             let stdinput = std::io::stdin();
@@ -33,15 +32,15 @@ fn main() -> Result<()> {
             }
             let mut buffer = String::new();
             io::stdin().read_to_string(&mut buffer)?;
-            if buffer.len() == 0 {
+            if buffer.is_empty() {
                 eprintln!("Warning: config file not provided, and stdin empty")
             }
-            system_config = Config::from_str(&buffer)?;
+            buffer.parse()?
         }
         Some(filename) => {
-            system_config = Config::from_file(&filename)?;
+            Config::from_file(&filename)?
         }
-    }
+    };
     let system = system_config.to_system();
     let results = system.evaluate();
     match output {
